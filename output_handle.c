@@ -29,7 +29,7 @@ AVStream * add_video_stream (AVFormatContext *fmt_ctx ,enum CodecID codec_id){
 	}
 
 	//set the index of the stream
-	st->id = 0;
+	st->id = ID_VIDEO_STREAM;
 
 	//set AVCodecContext of the stream
 	avctx = st->codec;
@@ -37,9 +37,9 @@ AVStream * add_video_stream (AVFormatContext *fmt_ctx ,enum CodecID codec_id){
 	avctx->codec_id = codec_id;
 	avctx->codec_type = AVMEDIA_TYPE_VIDEO;
 
-	avctx->bit_rate = 600 * 1000;
-	avctx->width = 640;
-	avctx->height = 360;
+	avctx->bit_rate = VIDEO_BIT_RATE;
+	avctx->width = VIDEO_WIDTH;
+	avctx->height = VIDEO_HEIGHT;
 
 	avctx->pix_fmt = PIX_FMT_YUV420P;
 	avctx->me_range = 16;
@@ -50,8 +50,9 @@ AVStream * add_video_stream (AVFormatContext *fmt_ctx ,enum CodecID codec_id){
 	avctx->crf = 22;
 
 	avctx->rc_lookahead = 60;
-	avctx->gop_size = 25;
-	avctx->time_base.den = 25;
+	avctx->gop_size = VIDEO_FRAME_RATE;
+
+	avctx->time_base.den = VIDEO_FRAME_RATE;
 	avctx->time_base.num = 1;
 
 
@@ -73,7 +74,7 @@ AVStream * add_video_stream (AVFormatContext *fmt_ctx ,enum CodecID codec_id){
 
 
 
-static AVStream * add_audio_stream (AVFormatContext *fmt_ctx ,enum CodecID codec_id){
+static AVStream * add_audio_stream (AVFormatContext *fmt_ctx ,enum CodecID codec_id ,INPUT_CONTEXT *ptr_input_ctx){
 	AVCodecContext *avctx;
 	AVStream *st;
 
@@ -93,8 +94,9 @@ static AVStream * add_audio_stream (AVFormatContext *fmt_ctx ,enum CodecID codec
 	avctx->codec_type = AVMEDIA_TYPE_AUDIO;
 
 	avctx->sample_fmt = AV_SAMPLE_FMT_S16;
-	avctx->bit_rate = 64000;
-	avctx->sample_rate = 44100;
+	avctx->bit_rate = AUDIO_BIT_RATE;
+	avctx->sample_rate = ptr_input_ctx->audio_codec_ctx->sample_rate/*44100*/;
+
 	avctx->channels = 2;
 
 	// some formats want stream headers to be separate(for example ,asfenc.c ,but not mpegts)
@@ -104,7 +106,7 @@ static AVStream * add_audio_stream (AVFormatContext *fmt_ctx ,enum CodecID codec
 	return st;
 }
 
-int init_output(OUTPUT_CONTEXT *ptr_output_ctx, char* output_file){
+int init_output(OUTPUT_CONTEXT *ptr_output_ctx, char* output_file ,INPUT_CONTEXT *ptr_input_ctx){
 
 	//set AVOutputFormat
     /* allocate the output media context */
@@ -140,7 +142,7 @@ int init_output(OUTPUT_CONTEXT *ptr_output_ctx, char* output_file){
 
     if (ptr_output_ctx->fmt->audio_codec != CODEC_ID_NONE) {
 
-    	ptr_output_ctx->audio_stream = add_audio_stream(ptr_output_ctx->ptr_format_ctx, ptr_output_ctx->audio_codec_id);
+    	ptr_output_ctx->audio_stream = add_audio_stream(ptr_output_ctx->ptr_format_ctx, ptr_output_ctx->audio_codec_id ,ptr_input_ctx);
     	if(ptr_output_ctx->audio_stream == NULL){
     		printf(".in output ,add audio stream failed \n");
     		exit(ADD_AUDIO_STREAM_FAIL);
@@ -278,60 +280,99 @@ void open_stream_codec(OUTPUT_CONTEXT *ptr_output_ctx){
 
 }
 
-void encode_video_frame(OUTPUT_CONTEXT *ptr_output_ctx ,AVFrame *pict ,INPUT_CONTEXT *ptr_input_ctx){
+void encode_video_frame(OUTPUT_CONTEXT *ptr_output_ctx, AVFrame *pict,
+		INPUT_CONTEXT *ptr_input_ctx) {
 
 	static int frame_count = 0;
+	int nb_frames;
+	double sync_ipts;
+	double duration = 0;
 
-	//encode the image
-	int video_encoded_out_size;
-//	pict->pts = av_rescale_q(frame_count ,AV_TIME_BASE * (int64_t)ptr_output_ctx->video_stream->codec->time_base.num
-//						,ptr_output_ctx->video_stream->codec->time_base.den);
-	pict->pts = frame_count ++;
+	/* compute the duration */
+	duration =
+			FFMAX(av_q2d(ptr_input_ctx->ptr_format_ctx->streams[ptr_input_ctx->video_index]->time_base),
+							av_q2d(ptr_input_ctx->video_codec_ctx->time_base));
 
-	printf("video ...start encode ....\n");
-	video_encoded_out_size = avcodec_encode_video(ptr_output_ctx->video_stream->codec
-			,ptr_output_ctx->video_outbuf ,ptr_output_ctx->video_outbuf_size
-			,pict);
+	if (ptr_input_ctx->ptr_format_ctx->streams[ptr_input_ctx->video_index]->avg_frame_rate.num)
+		duration = FFMAX(duration, 1/av_q2d(ptr_input_ctx->ptr_format_ctx->streams[ptr_input_ctx->video_index]->avg_frame_rate));
 
-	if (video_encoded_out_size < 0) {
-		fprintf(stderr, "Error encoding video frame\n");
-		exit(VIDEO_ENCODE_ERROR);
+	duration /= av_q2d(ptr_output_ctx->video_stream->codec->time_base);
+
+
+	/*	compute the sync_ipts ,use for to determine duplicate or drop the encode pic*/
+	sync_ipts = ptr_output_ctx->sync_ipts / av_q2d(ptr_output_ctx->video_stream->codec->time_base);
+
+
+    /* by default, we output a single frame ,there is no different in fps of input file  and fps of output file*/
+    nb_frames = 1;
+
+
+    //compute the vdelta ,do not forget the duration
+    double vdelta = sync_ipts - frame_count + duration;
+//	av_log(NULL, AV_LOG_WARNING, "frame_count = %d ,sync_ipts= %f ,vdelta  = %f \n",frame_count, sync_ipts ,vdelta );
+
+	// FIXME set to 0.5 after we fix some dts/pts bugs like in avidec.c
+	if (vdelta < -1.1)
+		nb_frames = 0;
+	else if (vdelta > 1.1)
+		nb_frames = lrintf(vdelta);
+
+	//set chris_count
+	int tmp_count;
+//	av_log(NULL, AV_LOG_WARNING, "nb_frames= %d \n", nb_frames);
+//	printf("video ...start encode .. ,chris_count = %d,nb_frames = %d\n" ,tmp_count ,nb_frames);
+	for (tmp_count = 0; tmp_count < nb_frames; tmp_count++) {
+		//encode the image
+		int video_encoded_out_size;
+		pict->pts = frame_count++;
+
+		video_encoded_out_size = avcodec_encode_video(
+				ptr_output_ctx->video_stream->codec,
+				ptr_output_ctx->video_outbuf, ptr_output_ctx->video_outbuf_size,
+				pict);
+
+		if (video_encoded_out_size < 0) {
+			fprintf(stderr, "Error encoding video frame\n");
+			exit(VIDEO_ENCODE_ERROR);
+		}
+
+//		if (video_encoded_out_size == 0)  //the first several number  pict ,there will no data to output because of the AVCodecContext buffer
+//			return;
+		//in here ,video_encodec_out_size > 0
+		if(video_encoded_out_size > 0){
+			AVPacket pkt;
+			av_init_packet(&pkt);
+			pkt.stream_index = ptr_output_ctx->video_stream->index;
+			pkt.data = ptr_output_ctx->video_outbuf; // packet data will be allocated by the encoder
+			pkt.size = video_encoded_out_size;
+
+			if (ptr_output_ctx->video_stream->codec->coded_frame->pts
+					!= AV_NOPTS_VALUE)
+				pkt.pts = av_rescale_q(
+						ptr_output_ctx->video_stream->codec->coded_frame->pts,
+						ptr_output_ctx->video_stream->codec->time_base,
+						ptr_output_ctx->video_stream->time_base);
+
+			if (ptr_output_ctx->video_stream->codec->coded_frame->key_frame)
+				pkt.flags |= AV_PKT_FLAG_KEY;
+
+			int i = av_write_frame(ptr_output_ctx->ptr_format_ctx, &pkt);
+
+			av_free_packet(&pkt);
+		}
+
 	}
 
-	if(video_encoded_out_size == 0) return ;
-	//in here ,video_encodec_out_size > 0
-	AVPacket pkt;
-	av_init_packet(&pkt);
-	pkt.stream_index = ptr_output_ctx->video_stream->index;
-	pkt.data = ptr_output_ctx->video_outbuf; // packet data will be allocated by the encoder
-	pkt.size = video_encoded_out_size;
-
-	if (ptr_output_ctx->video_stream->codec->coded_frame->pts != AV_NOPTS_VALUE)
-		pkt.pts = av_rescale_q(ptr_output_ctx->video_stream->codec->coded_frame->pts, ptr_output_ctx->video_stream->codec->time_base,
-				ptr_output_ctx->video_stream->time_base);
-
-	if(ptr_output_ctx->video_stream->codec->coded_frame->key_frame)
-		pkt.flags |= AV_PKT_FLAG_KEY;
-
-
-//	printf("pkt.pts + %lld \n" ,pkt.pts);
-//	if (c->coded_frame->pts != AV_NOPTS_VALUE)
-//		pkt.pts = av_rescale_q(c->coded_frame->pts, c->time_base,
-//				st->time_base);
-//	if (c->coded_frame->key_frame)
-//		pkt.flags |= AV_PKT_FLAG_KEY;
-
-//	int i = av_interleaved_write_frame(ptr_output_ctx->ptr_format_ctx, &pkt);  //write no data
-	int i = av_write_frame(ptr_output_ctx->ptr_format_ctx, &pkt);
-
-	av_free_packet(&pkt);
 }
 
 
-void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , AVFrame * audio_frame ,int buf_size){
+void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , uint8_t *buf ,int buf_size){
+//void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , AVFrame * audio_frame ,int buf_size){
 
 	int ret;
 	AVCodecContext *c = ptr_output_ctx->audio_stream->codec;
+
+
 	//packet for output
 	AVPacket pkt;
 	av_init_packet(&pkt);
@@ -344,20 +385,24 @@ void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , AVFrame * audio_frame ,
 		exit(1);
 	}
 
-	printf("frame_size = %d \n" ,c->frame_size);
+//	printf("\n\n");
+//	printf("frame_size = %d \n" ,c->frame_size);
 	frame->nb_samples = buf_size /
 					(c->channels * av_get_bytes_per_sample(c->sample_fmt));
 
-//	printf(".....%d.\n" ,av_get_bytes_per_sample(c->sample_fmt) );
+//	printf("frame->nb_samples = %d \n" ,frame->nb_samples);
 	if ((ret = avcodec_fill_audio_frame(frame, c->channels, AV_SAMPLE_FMT_S16,
-			audio_frame->data[0], buf_size, 1)) < 0) {
-		av_log(NULL, AV_LOG_FATAL, "Audio encoding failed\n");
+				buf, buf_size, 1)) < 0) {
+		av_log(NULL, AV_LOG_FATAL, ".Audio encoding failed\n");
 		exit(AUDIO_ENCODE_ERROR);
 	}
 
 	int got_packet = 0;
-	if (avcodec_encode_audio2(c, &pkt, frame, &got_packet) < 0) {
-		av_log(NULL, AV_LOG_FATAL, "Audio encoding failed\n");
+	int ret1 = avcodec_encode_audio2(c, &pkt, frame, &got_packet);
+//	printf("ret1 = %d \n" ,ret1);
+	if (ret1 < 0) {
+//	if (avcodec_encode_audio2(c, &pkt, frame, &got_packet) < 0) {
+		av_log(NULL, AV_LOG_FATAL, "..Audio encoding failed\n");
 		exit(AUDIO_ENCODE_ERROR);
 	}
 	pkt.pts = 0;

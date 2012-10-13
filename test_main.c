@@ -33,8 +33,9 @@ int main(int argc ,char *argv[]){
 	//init inputfile ,and get input file information
 	init_input(ptr_input_ctx ,argv[1]);
 
+
 	//init oputfile ,and set output file information
-	init_output(ptr_output_ctx ,argv[2]);
+	init_output(ptr_output_ctx ,argv[2] ,ptr_input_ctx);
 
 	//open video and audio ,set video_out_buf and audio_out_buf
 	open_stream_codec(ptr_output_ctx);
@@ -81,6 +82,9 @@ int main(int argc ,char *argv[]){
 
 			if (got_picture) {
 				//encode video
+				ptr_output_ctx->sync_ipts = av_q2d(ptr_input_ctx->ptr_format_ctx->streams[ptr_input_ctx->video_index]->time_base) *
+						(ptr_input_ctx->yuv_frame->best_effort_timestamp  )
+						- (double)ptr_input_ctx->ptr_format_ctx->start_time / AV_TIME_BASE;
 
 				//first swscale
 				sws_scale(ptr_output_ctx->img_convert_ctx ,
@@ -117,9 +121,22 @@ int main(int argc ,char *argv[]){
 					ptr_input_ctx->audio_size = data_size; //audio data size
 
 					//encode audio
-					printf("data_size = %d \n" ,data_size);
-					encode_audio_frame(ptr_output_ctx ,ptr_input_ctx->audio_decode_frame ,data_size);  //
+					int frame_bytes = ptr_output_ctx->audio_stream->codec->frame_size
+										* av_get_bytes_per_sample(ptr_output_ctx->audio_stream->codec->sample_fmt)
+										* ptr_output_ctx->audio_stream->codec->channels;
+					uint8_t * audio_buf = ptr_input_ctx->audio_decode_frame->data[0];
 
+					printf("frame_bytes = %d \n" ,frame_bytes);
+					while (data_size >= frame_bytes) {
+
+						encode_audio_frame(ptr_output_ctx ,audio_buf ,frame_bytes /*data_size*/);  //
+						data_size -= frame_bytes;
+						audio_buf += frame_bytes;
+					}
+
+//					encode_audio_frame(ptr_output_ctx ,ptr_input_ctx->audio_decode_frame ,data_size);  //
+
+//					while(1);
 				} else { //no data
 					printf("======>avcodec_decode_audio4 ,no data ..\n");
 					continue;

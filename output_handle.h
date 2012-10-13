@@ -21,6 +21,9 @@ typedef struct {
 	int audio_outbuf_size;
 	int16_t *samples;
 
+//	//audio sample number
+//	int audio_sample_num;
+
 	/*	video information */
 	AVStream *video_stream;
 	enum CodecID video_codec_id;
@@ -34,6 +37,11 @@ typedef struct {
 	AVFrame *encoded_yuv_pict;
 	uint8_t * pict_buf;
 
+
+
+	//the input stream
+	double sync_ipts;
+
 }OUTPUT_CONTEXT;
 
 
@@ -43,7 +51,7 @@ typedef struct {
  * @param:	output_file			the output file name
  *
  * */
-int init_output(OUTPUT_CONTEXT *ptr_output_ctx, char* output_file);
+int init_output(OUTPUT_CONTEXT *ptr_output_ctx, char* output_file ,INPUT_CONTEXT *ptr_input_ctx);
 
 /*
  * function : open_stream_codec
@@ -63,9 +71,9 @@ void encode_video_frame(OUTPUT_CONTEXT *ptr_output_ctx ,AVFrame *pict ,INPUT_CON
 /*
  * function : encode_audio_frame
  * @param:	ptr_output_ctx 	 	a structure contain the output file information
- * @param:	audio_frmae			AVFrame containing the raw audio data to be encoded
+ * --//@param:	audio_frmae			AVFrame containing the raw audio data to be encoded
  *
  * */
-void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , AVFrame * audio_frame ,int buf_size);
+void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , uint8_t *buf ,int buf_size);
 
 #endif
