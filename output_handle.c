@@ -309,7 +309,6 @@ void encode_video_frame(OUTPUT_CONTEXT *ptr_output_ctx, AVFrame *pict,
 
     //compute the vdelta ,do not forget the duration
     double vdelta = sync_ipts - frame_count + duration;
-//	av_log(NULL, AV_LOG_WARNING, "frame_count = %d ,sync_ipts= %f ,vdelta  = %f \n",frame_count, sync_ipts ,vdelta );
 
 	// FIXME set to 0.5 after we fix some dts/pts bugs like in avidec.c
 	if (vdelta < -1.1)
@@ -319,8 +318,6 @@ void encode_video_frame(OUTPUT_CONTEXT *ptr_output_ctx, AVFrame *pict,
 
 	//set chris_count
 	int tmp_count;
-//	av_log(NULL, AV_LOG_WARNING, "nb_frames= %d \n", nb_frames);
-//	printf("video ...start encode .. ,chris_count = %d,nb_frames = %d\n" ,tmp_count ,nb_frames);
 	for (tmp_count = 0; tmp_count < nb_frames; tmp_count++) {
 		//encode the image
 		int video_encoded_out_size;
@@ -367,7 +364,6 @@ void encode_video_frame(OUTPUT_CONTEXT *ptr_output_ctx, AVFrame *pict,
 
 
 void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , uint8_t *buf ,int buf_size){
-//void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , AVFrame * audio_frame ,int buf_size){
 
 	int ret;
 	AVCodecContext *c = ptr_output_ctx->audio_stream->codec;
@@ -385,12 +381,9 @@ void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , uint8_t *buf ,int buf_s
 		exit(1);
 	}
 
-//	printf("\n\n");
-//	printf("frame_size = %d \n" ,c->frame_size);
 	frame->nb_samples = buf_size /
 					(c->channels * av_get_bytes_per_sample(c->sample_fmt));
 
-//	printf("frame->nb_samples = %d \n" ,frame->nb_samples);
 	if ((ret = avcodec_fill_audio_frame(frame, c->channels, AV_SAMPLE_FMT_S16,
 				buf, buf_size, 1)) < 0) {
 		av_log(NULL, AV_LOG_FATAL, ".Audio encoding failed\n");
@@ -398,10 +391,7 @@ void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , uint8_t *buf ,int buf_s
 	}
 
 	int got_packet = 0;
-	int ret1 = avcodec_encode_audio2(c, &pkt, frame, &got_packet);
-//	printf("ret1 = %d \n" ,ret1);
-	if (ret1 < 0) {
-//	if (avcodec_encode_audio2(c, &pkt, frame, &got_packet) < 0) {
+	if (avcodec_encode_audio2(c, &pkt, frame, &got_packet) < 0) {
 		av_log(NULL, AV_LOG_FATAL, "..Audio encoding failed\n");
 		exit(AUDIO_ENCODE_ERROR);
 	}
@@ -409,10 +399,102 @@ void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , uint8_t *buf ,int buf_s
 	pkt.stream_index = ptr_output_ctx->audio_stream->index;
 
 	int i = av_write_frame(ptr_output_ctx->ptr_format_ctx, &pkt);
-//	printf("write frame .... ,i = %d\n", i);
 
 	av_free(frame);
 	av_free_packet(&pkt);
 }
 
 
+void encode_flush(OUTPUT_CONTEXT *ptr_output_ctx , int nb_ostreams){
+
+	int i ;
+
+	for (i = 0; i < nb_ostreams; i++){
+
+		AVStream *st = ptr_output_ctx->ptr_format_ctx->streams[i];
+		AVCodecContext *enc = st->codec;
+		int stop_encoding = 0;
+
+		for (;;){
+			AVPacket pkt;
+			int fifo_bytes;
+			av_init_packet(&pkt);
+			pkt.data = NULL;
+			pkt.size = 0;
+
+			switch (st->codec->codec_type) {
+			/*audio stream*/
+			case AVMEDIA_TYPE_AUDIO:
+			{
+				int got_packet = 0;
+				int ret1;
+				ret1 = avcodec_encode_audio2(enc, &pkt, NULL, &got_packet);
+				if ( ret1 < 0) {
+					av_log(NULL, AV_LOG_FATAL, "..Audio encoding failed\n");
+					exit(AUDIO_ENCODE_ERROR);
+				}
+
+				printf("audio ...........\n");
+				if (ret1 == 0){
+					stop_encoding = 1;
+					break;
+				}
+				pkt.pts = 0;
+				pkt.stream_index = ptr_output_ctx->audio_stream->index;
+
+				int i = av_write_frame(ptr_output_ctx->ptr_format_ctx, &pkt);
+
+
+				break;
+
+			}
+			/*video stream*/
+			case AVMEDIA_TYPE_VIDEO:
+			{
+				 int nEncodedBytes = avcodec_encode_video(
+								ptr_output_ctx->video_stream->codec,
+								ptr_output_ctx->video_outbuf, ptr_output_ctx->video_outbuf_size,
+								NULL);
+
+				if (nEncodedBytes < 0) {
+					av_log(NULL, AV_LOG_FATAL, "Video encoding failed\n");
+					exit(VIDEO_FLUSH_ERROR);
+				}
+
+				printf("video ...........\n");
+				if(nEncodedBytes > 0){
+					pkt.stream_index = ptr_output_ctx->video_stream->index;
+					pkt.data = ptr_output_ctx->video_outbuf; // packet data will be allocated by the encoder
+					pkt.size = nEncodedBytes;
+
+					if (ptr_output_ctx->video_stream->codec->coded_frame->pts
+							!= AV_NOPTS_VALUE)
+						pkt.pts =
+								av_rescale_q(
+										ptr_output_ctx->video_stream->codec->coded_frame->pts,
+										ptr_output_ctx->video_stream->codec->time_base,
+										ptr_output_ctx->video_stream->time_base);
+
+					if (ptr_output_ctx->video_stream->codec->coded_frame->key_frame)
+						pkt.flags |= AV_PKT_FLAG_KEY;
+
+					av_write_frame(ptr_output_ctx->ptr_format_ctx, &pkt);
+
+					av_free_packet(&pkt);
+				}else if(nEncodedBytes == 0){
+					stop_encoding = 1;
+					break;
+				}
+				break;
+			}
+			}//end switch
+
+			if(stop_encoding) break;
+
+		}//end for
+
+
+	}
+
+
+}

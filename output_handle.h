@@ -71,9 +71,18 @@ void encode_video_frame(OUTPUT_CONTEXT *ptr_output_ctx ,AVFrame *pict ,INPUT_CON
 /*
  * function : encode_audio_frame
  * @param:	ptr_output_ctx 	 	a structure contain the output file information
- * --//@param:	audio_frmae			AVFrame containing the raw audio data to be encoded
+ * @param:	buf					buf contain the decode audio data ,and then put into audio encoder
  *
  * */
 void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , uint8_t *buf ,int buf_size);
+
+
+/*
+ * function : encode_flush
+ * @param:	ptr_output_ctx 	 	a structure contain the output file information
+ * @param:  nb_ostreams			the number in the output file
+ *
+ * */
+void encode_flush(OUTPUT_CONTEXT *ptr_output_ctx , int nb_ostreams);
 
 #endif

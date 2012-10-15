@@ -52,9 +52,13 @@ int main(int argc ,char *argv[]){
     // write the stream header, if any
     avformat_write_header(ptr_output_ctx->ptr_format_ctx ,NULL);
 
-    ptr_output_ctx->img_convert_ctx = sws_getContext(ptr_input_ctx->video_codec_ctx->width ,ptr_input_ctx->video_codec_ctx->height ,
-    		 PIX_FMT_YUV420P ,ptr_output_ctx->video_stream->codec->width ,ptr_output_ctx->video_stream->codec->height ,
-    		 PIX_FMT_YUV420P ,SWS_BICUBIC ,NULL ,NULL ,NULL);
+    printf("ptr_output_ctx->ptr_format_ctx->nb_streams = %d \n\n" ,ptr_output_ctx->ptr_format_ctx->nb_streams);  //streams number in output file
+
+    ptr_output_ctx->img_convert_ctx = sws_getContext(
+    		ptr_input_ctx->video_codec_ctx->width ,ptr_input_ctx->video_codec_ctx->height ,PIX_FMT_YUV420P,
+    		 ptr_output_ctx->video_stream->codec->width ,ptr_output_ctx->video_stream->codec->height ,PIX_FMT_YUV420P ,
+    		 SWS_BICUBIC ,NULL ,NULL ,NULL);
+
 
     printf("src_width = %d ,src_height = %d \n" ,ptr_input_ctx->video_codec_ctx->width ,ptr_input_ctx->video_codec_ctx->height);
     printf("dts_width = %d ,dts_height = %d \n" ,ptr_output_ctx->video_stream->codec->width ,
@@ -126,7 +130,6 @@ int main(int argc ,char *argv[]){
 										* ptr_output_ctx->audio_stream->codec->channels;
 					uint8_t * audio_buf = ptr_input_ctx->audio_decode_frame->data[0];
 
-					printf("frame_bytes = %d \n" ,frame_bytes);
 					while (data_size >= frame_bytes) {
 
 						encode_audio_frame(ptr_output_ctx ,audio_buf ,frame_bytes /*data_size*/);  //
@@ -134,9 +137,6 @@ int main(int argc ,char *argv[]){
 						audio_buf += frame_bytes;
 					}
 
-//					encode_audio_frame(ptr_output_ctx ,ptr_input_ctx->audio_decode_frame ,data_size);  //
-
-//					while(1);
 				} else { //no data
 					printf("======>avcodec_decode_audio4 ,no data ..\n");
 					continue;
@@ -150,4 +150,13 @@ int main(int argc ,char *argv[]){
 
 	}//endwhile
 
+
+	printf("before flush ,ptr_output_ctx->ptr_format_ctx->nb_streams = %d \n\n" ,ptr_output_ctx->ptr_format_ctx->nb_streams);
+	encode_flush(ptr_output_ctx ,ptr_output_ctx->ptr_format_ctx->nb_streams);
+
+	printf("before wirite tailer ...\n\n");
+
+	av_write_trailer(ptr_output_ctx->ptr_format_ctx );
+
+	/*free memory*/
 }

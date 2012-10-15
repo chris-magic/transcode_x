@@ -29,5 +29,8 @@
 #define 	VIDEO_ENCODE_ERROR				0x19
 #define 	AUDIO_ENCODE_ERROR				0x20
 
+#define 	AUDIO_FLUSH_ERROR				0x21
+#define 	VIDEO_FLUSH_ERROR				0x22
+
 
 #endif
