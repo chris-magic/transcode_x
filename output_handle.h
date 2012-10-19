@@ -3,6 +3,7 @@
 
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
+#include "libswresample/swresample.h"
 #include "input_handle.h"
 
 //output file information
@@ -37,7 +38,8 @@ typedef struct {
 	AVFrame *encoded_yuv_pict;
 	uint8_t * pict_buf;
 
-
+	//audio resample
+	struct SwrContext *swr;
 
 	//the input stream
 	double sync_ipts;

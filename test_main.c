@@ -4,14 +4,19 @@
  * */
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
 #include "libswscale/swscale.h"
+#include "libswresample/swresample.h"
 
 #include "input_handle.h"
 #include "output_handle.h"
 #include "chris_error.h"
+
+static uint8_t *audio_buf;
+static unsigned int allocated_audio_buf_size;
 
 int main(int argc ,char *argv[]){
 
@@ -66,6 +71,24 @@ int main(int argc ,char *argv[]){
 
 //    while(1);
 
+    //init audio resample
+    if(ptr_output_ctx->swr == NULL){
+    	printf("swr is null ...\n");
+    }
+
+    printf(" channel layout for out put = %lld \n" ,ptr_output_ctx->audio_stream->codec->channel_layout);
+    printf(" channel layout for input put = %lld \n" ,ptr_input_ctx->audio_codec_ctx->channel_layout);
+
+    //add here ,alter ????!!!!!
+//    ptr_output_ctx->audio_stream->codec->channel_layout = ptr_input_ctx->audio_codec_ctx->channel_layout;
+//    ptr_output_ctx->swr = swr_alloc_set_opts(/*ptr_output_ctx->swr*/ NULL,
+//       /*ptr_output_ctx->audio_stream->codec->channel_layout*/
+//    		ptr_input_ctx->audio_codec_ctx->channel_layout
+//       , ptr_output_ctx->audio_stream->codec->sample_fmt, ptr_output_ctx->audio_stream->codec->sample_rate,
+//    	ptr_input_ctx->audio_codec_ctx->channel_layout, ptr_input_ctx->audio_codec_ctx->sample_fmt, ptr_input_ctx->audio_codec_ctx->sample_rate,
+//            0, NULL);
+//
+//    swr_init(ptr_output_ctx->swr);
 	printf("before av_read_frame ...\n");
 	/*************************************************************************************/
 	/*decoder loop*/
@@ -103,6 +126,8 @@ int main(int argc ,char *argv[]){
 			#endif
 
 		} else if (ptr_input_ctx->pkt.stream_index == ptr_input_ctx->audio_index) {
+
+			printf("HAHA.................\n");
 			#if 1
 			//decode audio packet
 			while (ptr_input_ctx->pkt.size > 0) {
@@ -128,14 +153,114 @@ int main(int argc ,char *argv[]){
 					int frame_bytes = ptr_output_ctx->audio_stream->codec->frame_size
 										* av_get_bytes_per_sample(ptr_output_ctx->audio_stream->codec->sample_fmt)
 										* ptr_output_ctx->audio_stream->codec->channels;
-					uint8_t * audio_buf = ptr_input_ctx->audio_decode_frame->data[0];
 
-					while (data_size >= frame_bytes) {
+//					uint8_t * audio_buf = ptr_input_ctx->audio_decode_frame->data[0];
 
+#if 1
+
+					uint8_t *buftmp;
+					int64_t audio_buf_size, size_out;
+
+					AVCodecContext *enc = ptr_output_ctx->audio_stream->codec;
+					AVCodecContext *dec = ptr_input_ctx->audio_codec_ctx;
+
+				    int osize = av_get_bytes_per_sample(enc->sample_fmt);
+				    int isize = av_get_bytes_per_sample(dec->sample_fmt);
+				    uint8_t *buf = ptr_input_ctx->audio_decode_frame->data[0];
+				    int size     = ptr_input_ctx->audio_decode_frame->nb_samples * dec->channels * isize;
+
+				    printf("decoded_frame->nb_samples = %d ,size = %d  \n" ,ptr_input_ctx->audio_decode_frame->nb_samples ,size);
+				    int64_t allocated_for_size = size;
+
+				need_realloc:
+				    audio_buf_size  = (allocated_for_size + isize * dec->channels - 1) / (isize * dec->channels);
+				    printf("1audio_buf_size = %d \n" ,audio_buf_size);
+				    audio_buf_size  = (audio_buf_size * enc->sample_rate + dec->sample_rate) / dec->sample_rate;
+				    printf("2audio_buf_size = %d \n" ,audio_buf_size);
+				    audio_buf_size  = audio_buf_size * 2 + 10000; // safety factors for the deprecated resampling API
+				    audio_buf_size  = FFMAX(audio_buf_size, enc->frame_size);
+
+				    printf("audio_buf_size = %d ,enc->frame_size = %d\n" ,audio_buf_size ,enc->frame_size);
+				    audio_buf_size *= osize * enc->channels;
+				    printf("audio_buf_size = %d \n" ,audio_buf_size);
+
+				    if (audio_buf_size > INT_MAX) {
+				        av_log(NULL, AV_LOG_FATAL, "Buffer sizes too large\n");
+				        exit(1);
+				    }
+
+
+				    printf("allocated_audio_buf_size = %ud\n" ,allocated_audio_buf_size);
+
+				    av_fast_malloc(&audio_buf, &allocated_audio_buf_size, audio_buf_size);
+				    if (!audio_buf) {
+				        av_log(NULL, AV_LOG_FATAL, "Out of memory in do_audio_out\n");
+				        exit(1);
+				    }
+
+
+				    static int chris_haha = 1;
+				    if(chris_haha == 1){
+				    	chris_haha++;
+				    	ptr_output_ctx->swr = swr_alloc_set_opts(ptr_output_ctx->swr,
+								ptr_output_ctx->audio_stream->codec->channel_layout,
+								ptr_output_ctx->audio_stream->codec->sample_fmt,
+								ptr_output_ctx->audio_stream->codec->sample_rate,
+
+								ptr_input_ctx->audio_codec_ctx->channel_layout,
+								ptr_input_ctx->audio_codec_ctx->sample_fmt,
+								ptr_input_ctx->audio_codec_ctx->sample_rate,
+																  0, NULL);
+
+						if (av_opt_set_int(ptr_output_ctx->swr, "ich", dec->channels, 0) < 0) {
+							av_log(NULL, AV_LOG_FATAL, "Unsupported number of input channels\n");
+							exit(1);
+						}
+						if (av_opt_set_int(ptr_output_ctx->swr, "och", enc->channels, 0) < 0) {
+							av_log(NULL, AV_LOG_FATAL, "Unsupported number of output channels\n");
+							exit(1);
+						}
+
+						swr_init(ptr_output_ctx->swr);
+						if(ptr_output_ctx->swr == NULL ){
+							printf("swr is null ...\n");
+							swr_free(&ptr_output_ctx->swr);
+							exit(1);
+						}
+
+				    }
+
+					buftmp = audio_buf;
+					size_out = swr_convert(ptr_output_ctx->swr,
+								(      uint8_t*[]){buftmp},  audio_buf_size / (ptr_output_ctx->audio_stream->codec->channels * osize),
+					            (const uint8_t*[]){buf   }, size / (ptr_input_ctx->audio_codec_ctx->channels * isize));
+
+					size_out = size_out * ptr_output_ctx->audio_stream->codec->channels * osize;
+
+
+					frame_bytes = ptr_output_ctx->audio_stream->codec->frame_size * osize *
+										ptr_output_ctx->audio_stream->codec->channels;
+
+					printf("2...\n");
+					while (size_out >= frame_bytes) {
+						printf("						1....\n");
 						encode_audio_frame(ptr_output_ctx ,audio_buf ,frame_bytes /*data_size*/);  //
-						data_size -= frame_bytes;
+						size_out -= frame_bytes;
 						audio_buf += frame_bytes;
 					}
+					printf("\n\n");
+					//swr_free(&ptr_output_ctx->swr);
+
+					printf("....\n");
+
+#endif
+/////这中间的是 为了resample 添加的
+//					while (data_size >= frame_bytes) {
+//
+//						encode_audio_frame(ptr_output_ctx ,audio_buf ,frame_bytes /*data_size*/);  //
+//						data_size -= frame_bytes;
+//						audio_buf += frame_bytes;
+//					}
 
 				} else { //no data
 					printf("======>avcodec_decode_audio4 ,no data ..\n");
@@ -144,6 +269,7 @@ int main(int argc ,char *argv[]){
 
 				ptr_input_ctx->pkt.size -= len;
 				ptr_input_ctx->pkt.data += len;
+
 			}
 			#endif
 		}

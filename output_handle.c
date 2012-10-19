@@ -95,7 +95,7 @@ static AVStream * add_audio_stream (AVFormatContext *fmt_ctx ,enum CodecID codec
 
 	avctx->sample_fmt = AV_SAMPLE_FMT_S16;
 	avctx->bit_rate = AUDIO_BIT_RATE;
-	avctx->sample_rate = ptr_input_ctx->audio_codec_ctx->sample_rate/*44100*/;
+	avctx->sample_rate = 48000;//ptr_input_ctx->audio_codec_ctx->sample_rate/*44100*/;
 
 	avctx->channels = 2;
 
