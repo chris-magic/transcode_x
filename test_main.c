@@ -149,7 +149,7 @@ int main(int argc ,char *argv[]){
 				if (got_frame) {
 					//acquire the large of the decoded audio info...
 
-#if 1
+#if 0
 					int data_size = av_samples_get_buffer_size(NULL,
 							ptr_input_ctx->audio_codec_ctx->channels,
 							ptr_input_ctx->audio_decode_frame->nb_samples,
@@ -163,7 +163,7 @@ int main(int argc ,char *argv[]){
 
 					uint8_t * audio_buf = ptr_input_ctx->audio_decode_frame->data[0];
 #endif
-#if 0
+#if 1
 
 				    uint8_t *buftmp;
 				    int64_t audio_buf_size, size_out;
@@ -195,32 +195,40 @@ int main(int argc ,char *argv[]){
 				        exit(1);
 				    }
 
-				    ptr_output_ctx->swr = swr_alloc_set_opts(NULL,
-				                                             enc->channel_layout, enc->sample_fmt, enc->sample_rate,
-				                                             dec->channel_layout, dec->sample_fmt, dec->sample_rate,
-				                                             0, NULL);
+				    static int chris_ii = 0;
+//				    if(chris_ii == 0){
+				    if(1){
+				    	chris_ii ++;
+
+				    	ptr_output_ctx->swr = swr_alloc_set_opts(NULL,
+				    					                                             enc->channel_layout, enc->sample_fmt, enc->sample_rate,
+				    					                                             dec->channel_layout, dec->sample_fmt, dec->sample_rate,
+				    					                                             0, NULL);
 
 
-				    if (av_opt_set_int(ptr_output_ctx->swr, "ich", dec->channels, 0) < 0) {
-					   av_log(NULL, AV_LOG_FATAL, "Unsupported number of input channels\n");
-					   exit(1);
-				   }
-				   if (av_opt_set_int(ptr_output_ctx->swr, "och", enc->channels, 0) < 0) {
-					   av_log(NULL, AV_LOG_FATAL, "Unsupported number of output channels\n");
-					   exit(1);
-				   }
+							if (av_opt_set_int(ptr_output_ctx->swr, "ich", dec->channels, 0) < 0) {
+							   av_log(NULL, AV_LOG_FATAL, "Unsupported number of input channels\n");
+							   exit(1);
+						   }
+						   if (av_opt_set_int(ptr_output_ctx->swr, "och", enc->channels, 0) < 0) {
+							   av_log(NULL, AV_LOG_FATAL, "Unsupported number of output channels\n");
+							   exit(1);
+						   }
 
-				   if(ptr_output_ctx->swr && swr_init(ptr_output_ctx->swr) < 0){
-						 av_log(NULL, AV_LOG_FATAL, "swr_init() failed\n");
-						 swr_free(&ptr_output_ctx->swr);
-					 }
+						   if(ptr_output_ctx->swr && swr_init(ptr_output_ctx->swr) < 0){
+								 av_log(NULL, AV_LOG_FATAL, "swr_init() failed\n");
+								 swr_free(&ptr_output_ctx->swr);
+							 }
 
-					 if (!ptr_output_ctx->swr) {
-						 av_log(NULL, AV_LOG_FATAL, "Can not resample %d channels @ %d Hz to %d channels @ %d Hz\n",
-								 dec->channels, dec->sample_rate,
-								 enc->channels, enc->sample_rate);
-						 exit(1);
-					 }
+							 if (!ptr_output_ctx->swr) {
+								 av_log(NULL, AV_LOG_FATAL, "Can not resample %d channels @ %d Hz to %d channels @ %d Hz\n",
+										 dec->channels, dec->sample_rate,
+										 enc->channels, enc->sample_rate);
+								 exit(1);
+							 }
+
+				    }
+
 
 
 					 buftmp = audio_buf;
@@ -246,7 +254,7 @@ int main(int argc ,char *argv[]){
 					}
 
 #endif
-#if 1
+#if 0
 /////这中间的是 为了resample 添加的
 					while (data_size >= frame_bytes) {
 
