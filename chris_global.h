@@ -30,7 +30,7 @@
 #define 		AUDIO_CODEC_ID					CODEC_ID_AAC;
 #define 		AUDIO_OUT_BUF_SIZE				10000;
 
-#define 		AUDIO_BIT_RATE					6400;
+#define 		AUDIO_BIT_RATE					64000;
 #define			AUDIO_CHANNAL					2;
 
 #define 		ID_AUDIO_STREAM					1;

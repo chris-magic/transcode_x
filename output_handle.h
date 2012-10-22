@@ -4,6 +4,7 @@
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
 #include "libswresample/swresample.h"
+#include "libavutil/fifo.h"
 #include "input_handle.h"
 
 //output file information
@@ -40,6 +41,7 @@ typedef struct {
 
 	//audio resample
 	struct SwrContext *swr;
+	 AVFifoBuffer *fifo;     /* for compression: one audio fifo per codec */
 
 	//the input stream
 	double sync_ipts;
