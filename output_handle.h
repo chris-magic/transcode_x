@@ -41,13 +41,15 @@ typedef struct {
 
 	//audio resample
 	struct SwrContext *swr;
-	 AVFifoBuffer *fifo;     /* for compression: one audio fifo per codec */
+	AVFifoBuffer *fifo;     /* for compression: one audio fifo per codec */
+	uint8_t *audio_buf;
+	unsigned int allocated_audio_buf_size;
+	int audio_resample;
 
 	//the input stream
 	double sync_ipts;
 
 }OUTPUT_CONTEXT;
-
 
 /*
  * function : init_input
@@ -88,5 +90,11 @@ void encode_audio_frame(OUTPUT_CONTEXT *ptr_output_ctx , uint8_t *buf ,int buf_s
  *
  * */
 void encode_flush(OUTPUT_CONTEXT *ptr_output_ctx , int nb_ostreams);
+
+
+/*
+ * function : maybe resample the audio argument ,and then encode the audio data
+ * */
+void do_audio_out(OUTPUT_CONTEXT *ptr_output_ctx ,INPUT_CONTEXT *ptr_input_ctx ,AVFrame *decoded_frame);
 
 #endif

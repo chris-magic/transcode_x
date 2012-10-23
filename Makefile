@@ -9,4 +9,4 @@ src_file = test_main.c	\
 			output_handle.c
 
 all:
-	gcc -g ${src_file} -o ${target} -I${include_path} -L${lib_path} -lavformat -lavcodec  -lavutil -lswscale -lm -lz -lpthread -lx264 -L./ -lfaac
+	gcc -g ${src_file} -o ${target} -I${include_path} -L${lib_path} -lavformat -lavcodec  -lavutil -lswscale -lswresample -lm -lz -lpthread -lx264 -L./ -lfaac
